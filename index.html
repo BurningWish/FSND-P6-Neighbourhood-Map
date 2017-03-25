@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neighbourhood Map</title>
+    <link rel="stylesheet" href="semantic/dist/semantic.min.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="option-bar">
+      <h2 id="app-title">One Day in Florence<i class="street view icon"></i></h2>
+
+      <!-- This is the input box for searching place -->
+      <div id="input-div" class="ui icon input">
+        <input type="text" id="my-input" placeholder="Search for place name..." data-bind="textInput: filter">
+        <!-- this icon is only shown when filter is not empty -->
+        <!-- if user clicks this icon, filter will be reset to empty -->
+        <i class="circular remove link icon" data-bind="visible: filter().length > 0, click: resetFilter"></i>
+      </div>
+
+      <!-- This area is only visible if error happens when App fecthing data from wikipedia or flicker -->
+      <div class="error-msg-area">
+        <p class="error-msg" data-bind="visible: wikiError">Loading Wikipedia data error!</p>
+        <p class="error-msg" data-bind="visible: flickerError">Loading Flicker data error!</p>
+      </div>
+
+      <!-- This is the place list -->
+      <ul data-bind="foreach: filteredPlaces">
+          <li class="list-item">
+            <p class="place-title" data-bind="text:title, click: toggleDropDown, event: {mouseover: startBounce, mouseout: endBounce}"></p>
+            <div class="dropdown-page" data-bind="visible: showDropDown">
+              <div class="place-photo" data-bind="style: {backgroundImage: 'url(\'' + photoUrl() + '\')'}"></div>
+              <i>Photo provided by Flicker</i>
+              <p class="wiki-text" data-bind="text: wikiInfo() + ' (from wikipedia)'"></p>
+              <a class="mini ui blue button" data-bind="attr: {href: wikiAddress}">Lear More</a>
+              <a class="mini ui red button" data-bind="click: toggleDropDown">Close Intro</a>
+            </div>
+          </li>
+      </ul>
+    </div>
+
+
+    <div id="map"></div>
+
+    <script src="js/jquery-3.1.1.min.js"></script>
+    <script src="semantic/dist/semantic.min.js"></script>
+    <script src="js/knockout.js"></script>
+    <script src="js/app.js"></script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?libraries=places,geometry,drawing&key=AIzaSyDxpUofB_0v8cRc3EPC_DTdtpygL5ioiAI&v=3&callback=initMap">
+    </script>
+</body>
+</html>
