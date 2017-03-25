@@ -56,12 +56,18 @@ var Place = function(data){
     };
 
     // toggle the drop down menu for this place
+    // moreover, the corresponding marker's color will change
     self.toggleDropDown = function(){
         if (self.showDropDown()){
             self.showDropDown(false);
+            self.marker.setIcon("http://maps.google.com/mapfiles/ms/icons/blue-dot.png");
+            self.largeInfowindow.close();
         }
         else{
             self.showDropDown(true);
+            self.marker.setIcon("http://maps.google.com/mapfiles/ms/icons/red-dot.png");
+            retrieveStreetView(self);
+            self.largeInfowindow.open(map, self.marker);
         }
     };
 };
@@ -118,6 +124,11 @@ myViewModel.filteredPlaces = ko.computed(function(){
         if (place.hasOwnProperty("marker")){
             place.marker.setVisible(true);
         }
+
+        // Also make sure all the infowindow is closed
+        if (place.hasOwnProperty("largeInfowindow")){
+            place.largeInfowindow.close();
+        }
     });
 
     // now use the filter to both filter the list and hide/show markers
@@ -152,11 +163,14 @@ ko.utils.arrayForEach(myViewModel.placeList(), function(place){
         url: wikiUrl,
         dataType: "jsonp"
     }).done(function(response){
-        // if nothing is wrong, we fetch data from response
-        // response[2][0] is the place introduction
-        place.wikiInfo(response[2][0]);
-        // response[3][0] is the link address for the place
-        place.wikiAddress(response[3][0]);
+        if(response){
+            place.wikiInfo(response[2][0]);
+            place.wikiAddress(response[3][0]);
+        }
+        else{
+            place.wikiInfo("No info available ...");
+            myViewModel.wikiError(true);
+        }
     }).fail(function(){
         // if we have problem connecting to wikipedia, set wikiError to be true
         myViewModel.wikiError(true);
@@ -173,13 +187,18 @@ ko.utils.arrayForEach(myViewModel.placeList(), function(place){
         url: flickerUrl,
         dataType: "json"
     }).done(function(response){
-        // if nothing wrong, first get the photo information from response
-        var photoInfo = response.photos.photo[0];
-
-        // then use the photo information to get the photo url and store it to the place
-        var finalPhotoUrl = "https://farm" + photoInfo.farm + ".staticflickr.com/" +
-            photoInfo.server + "/" + photoInfo.id + "_" + photoInfo.secret +".jpg";
-        place.photoUrl(finalPhotoUrl);
+        if (response && response.stat == 'ok') {
+            // if nothing wrong, first get the photo information from response
+            var photoInfo = response.photos.photo[0];
+            // then use the photo information to get the photo url and store it to the place
+            var finalPhotoUrl = "https://farm" + photoInfo.farm + ".staticflickr.com/" +
+                photoInfo.server + "/" + photoInfo.id + "_" + photoInfo.secret +".jpg";
+            place.photoUrl(finalPhotoUrl);
+        }
+        else{
+            place.photoUrl("");
+            myViewModel.flickerError(true);
+        }
 
     }).fail(function(){
         // if we have problem connecting flicker, set flickerError to be true
@@ -199,13 +218,11 @@ function initMap(){
           zoom: 13
         });
 
-    var largeInfowindow = new google.maps.InfoWindow();
     var bounds = new google.maps.LatLngBounds();
 
     // We use the location of each place to create a corresponding marker
     // And we store the marker as a object property in that place
     for (var i = 0; i < myViewModel.placeList().length; i++) {
-
         // at this point, the place points to myViewModel.placeList()[i]
         var place = myViewModel.placeList()[i];
 
@@ -225,76 +242,97 @@ function initMap(){
         // Store the corresponding marker within myViewModel.placeList()[i]
         place.marker = marker;
 
+        // Each place also has an associated inforwindow, which contains streeview of the the place
+        place.largeInfowindow = new google.maps.InfoWindow({
+            content: "",
+            id: i
+        });
+
+        // Make sure if you close the largeinfowindow,
+        // you also hide the dropdown menu in the list and reset the marker to blue
+        place.largeInfowindow.addListener("closeclick", function(){
+            var place = myViewModel.placeList()[this.id];
+            place.marker.setIcon("http://maps.google.com/mapfiles/ms/icons/blue-dot.png");
+            place.showDropDown(false);
+        });
+
         // extend the boundaries to the map for each marker
         bounds.extend(marker.position);
 
         // create an onlick event to open an infowindow on each marker
+        // moreover, when you click a marker it color will change,
+        // and place in the list will show/hide drop down menu accordingly
         marker.addListener('click', function(){
-            populateInfoWindow(this, largeInfowindow);
-        });
 
-        marker.addListener('mouseover', function(){
-            this.setIcon('http://maps.google.com/mapfiles/ms/icons/red-dot.png');
-        });
+            var self = this;
 
-        marker.addListener("mouseout", function(){
-            this.setIcon('http://maps.google.com/mapfiles/ms/icons/blue-dot.png');
+            // use the marker id to get its corresponding place
+            var place = myViewModel.placeList()[self.id];
+
+            // if marker is blue, then change its color to red and show dropdown menu
+            if (self.getIcon() == "http://maps.google.com/mapfiles/ms/icons/blue-dot.png"){
+                self.setIcon("http://maps.google.com/mapfiles/ms/icons/red-dot.png");
+                place.showDropDown(true);
+                retrieveStreetView(place);
+                // now let's open infowindow finally
+                place.largeInfowindow.open(map, self);
+            }
+
+            // if marker is red, then change its color to blue and hide dropdown menu
+            else {
+                self.setIcon("http://maps.google.com/mapfiles/ms/icons/blue-dot.png");
+                place.showDropDown(false);
+                place.largeInfowindow.close();
+            }
         });
     }
 
     map.fitBounds(bounds);
 
-    // This function populates the infowindow when the marker is clicked. We'll only allow
-    // one infowindow which will open at the marker that is clicked, and populate based
-    // on that markers position.
-    function populateInfoWindow(marker, infowindow) {
-        // Check to make sure the infowindow is not already opened on this marker.
-        if (infowindow.marker != marker) {
-            infowindow.marker = marker;
-            infowindow.setContent('');
-            // infowindow.setContent('<div>' + marker.title + '</div>');
-            // infowindow.open(map, marker);
-            // Make sure the marker property is cleared if the infowindow is closed.
-            infowindow.addListener('closeclick', function(){
-                infowindow.setMarker = null;
-            });
-
-            var streetViewService = new google.maps.StreetViewService();
-            var radius = 10;
-            // In case the status is OK, which means the pano was found, compute the
-            // position of the streetview image, then calculate the heading, then get a
-            // panorama from that and set the options
-            function getStreetView(data, status) {
-                if (status == google.maps.StreetViewStatus.OK) {
-                    console.log("get street view");
-                    var nearStreetViewLocation = data.location.latLng;
-                    var heading = google.maps.geometry.spherical.computeHeading(nearStreetViewLocation, marker.position);
-                    infowindow.setContent('<div>' + marker.title + '</div><div id="pano"></div>');
-                    var panoramaOptions = {
-                        position: nearStreetViewLocation,
-                        pov: {
-                            heading: heading,
-                            pitch: 30
-                        }
-                    };
-                    var panorama = new google.maps.StreetViewPanorama(document.getElementById('pano'), panoramaOptions);
-                }
-                else{
-                    console.log("fail to get street view");
-                    infowindow.setContent('<div>' + marker.title + '</div>' + '<div>No Street View Found</div>');
-                }
-            }
-
-            // Use streetview service to get the closest streetview image within
-            // 50 meters of the markers position
-            streetViewService.getPanoramaByLocation(marker.position, radius, getStreetView);
-            // Open the infowindow on the correct marker.
-            infowindow.open(map, marker);
-        }
-    };
+    google.maps.event.addDomListener(window, 'resize', function() {
+        map.fitBounds(bounds);
+    });
 
     console.log("Initialize Map --> Done!");
 };
+
+// This function is called when user clicks a place in the list, or click a marker in the map
+function retrieveStreetView(place){
+
+    var self = place.marker;
+    var streetViewService = new google.maps.StreetViewService();
+    var radius = 10;
+
+    function getStreetView(data, status) {
+        if (status == google.maps.StreetViewStatus.OK) {
+            // if we can get street view, add it to the infowindow content of the place
+            var nearStreetViewLocation = data.location.latLng;
+            var heading = google.maps.geometry.spherical.computeHeading(nearStreetViewLocation, self.position);
+            place.largeInfowindow.setContent('<div>' + self.title + '</div><div class="pano" id="pano' + '-' + self.id + '"></div>');
+            var panoramaOptions = {
+                position: nearStreetViewLocation,
+                pov: {
+                    heading: heading,
+                    pitch: 30
+                    }
+                };
+            var panorama = new google.maps.StreetViewPanorama(document.getElementById('pano'+'-'+ self.id), panoramaOptions);
+        }
+        else{
+            // if we cannot get stree view, instead show error message in the infowindow
+            place.largeInfowindow.setContent('<div>' + self.title + '</div>' + '<div>No Street View Found</div>');
+        }
+    }
+
+    // Use streetview service to get the closest streetview image within
+    // 50 meters of the markers position
+    streetViewService.getPanoramaByLocation(self.position, radius, getStreetView);
+}
+
+// this function will only trigger when app cannot connect to google map api
+function mapAPIError(){
+    alert("Sorry, we fail to connect Google Map API...Please try again later...");
+}
 
 // Finally, everything is ok, let's bind myViewModel and play with app!
 ko.applyBindings(myViewModel);
